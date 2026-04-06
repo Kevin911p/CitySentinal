@@ -1,410 +1,196 @@
 package CitySentinal;
 
-import org.apache.pdfbox.pdmodel.*;
-import org.apache.pdfbox.pdmodel.common.PDRectangle;
-import org.apache.pdfbox.pdmodel.font.*;
-import org.apache.pdfbox.pdmodel.graphics.color.PDColor;
-import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceRGB;
-import org.apache.pdfbox.pdmodel.PDPageContentStream;
-
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.List;
 
 /**
- * PDFReportExporter — generates a professional PDF threat report.
- *
- * Requires Apache PDFBox 3.x on the classpath.
- * Maven / Gradle dependency:
- *
- *   <!-- Maven -->
- *   <dependency>
- *     <groupId>org.apache.pdfbox</groupId>
- *     <artifactId>pdfbox</artifactId>
- *     <version>3.0.2</version>
- *   </dependency>
- *
- *   // Gradle
- *   implementation 'org.apache.pdfbox:pdfbox:3.0.2'
- *
- * Usage from MainDashboard:
- *   PDFReportExporter exporter = new PDFReportExporter(threatDAO, zoneDAO);
- *   exporter.export(outputFile);   // throws IOException on failure
+ * PDFReportExporter — writes a real, openable PDF using pure Java (no iText needed).
+ * Builds a minimal PDF 1.4 structure manually so any PDF reader can open it.
  */
 public class PDFReportExporter {
 
     private final ThreatDAO threatDAO;
     private final ZoneDAO   zoneDAO;
 
-    // Layout constants
-    private static final float PAGE_W    = PDRectangle.A4.getWidth();
-    private static final float PAGE_H    = PDRectangle.A4.getHeight();
-    private static final float MARGIN    = 50f;
-    private static final float COL_W    = PAGE_W - 2 * MARGIN;
-    private static final float LINE_H   = 16f;
-    private static final float ROW_H    = 18f;
-
-    // Brand colours (R, G, B in 0..1 range)
-    private static final float[] C_DARK   = {0.06f, 0.09f, 0.14f};  // #0f1623
-    private static final float[] C_ACCENT = {0.31f, 0.27f, 0.90f};  // #4f46e5
-    private static final float[] C_RED    = {0.94f, 0.27f, 0.27f};  // #ef4444
-    private static final float[] C_AMBER  = {0.96f, 0.62f, 0.04f};  // #f59e0b
-    private static final float[] C_BLUE   = {0.23f, 0.51f, 0.96f};  // #3b82f6
-    private static final float[] C_GRAY   = {0.59f, 0.64f, 0.73f};  // #96a3bb
-    private static final float[] C_GREEN  = {0.13f, 0.77f, 0.37f};  // #22c55e
-    private static final float[] C_WHITE  = {1f, 1f, 1f};
-    private static final float[] C_BLACK  = {0.12f, 0.16f, 0.22f};  // near-black text
-    private static final float[] C_LIGHT  = {0.95f, 0.96f, 0.98f};  // table row alt
-
     public PDFReportExporter(ThreatDAO threatDAO, ZoneDAO zoneDAO) {
         this.threatDAO = threatDAO;
         this.zoneDAO   = zoneDAO;
     }
 
-    public void export(File outputFile) throws IOException {
-        List<Threat> threats = threatDAO.getAllThreats();
+    public void export(File file) throws Exception {
         List<Zone>   zones   = zoneDAO.getAllZones();
+        List<Threat> threats = threatDAO.getAllThreats();
 
-        // Zone lookup map
-        Map<Integer, String> zoneNames = new HashMap<>();
-        for (Zone z : zones) zoneNames.put(z.getZoneId(), z.getZoneName());
+        // Build report lines
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        lines.add("SentinelCity - Threat Report");
+        lines.add("Generated: " + LocalDateTime.now()
+                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        lines.add(" ");
+        lines.add("=== ZONES (" + zones.size() + ") ===");
+        for (Zone z : zones) {
+            lines.add("  [Zone " + z.getZoneId() + "] " + z.getZoneName()
+                    + "  |  Threat Level: " + z.getThreatLevel());
+        }
+        lines.add(" ");
+        lines.add("=== THREATS (" + threats.size() + ") ===");
 
-        // Stats
-        long critical    = threats.stream().filter(t -> "Critical".equals(t.getSeverity())).count();
-        long warning     = threats.stream().filter(t -> "Warning".equals(t.getSeverity())).count();
-        long info        = threats.stream().filter(t -> "Info".equals(t.getSeverity())).count();
-        long active      = threats.stream().filter(t -> "Active".equals(t.getStatus())).count();
-        long resolved    = threats.stream().filter(t -> "Resolved".equals(t.getStatus())).count();
-        long investing   = threats.stream().filter(t -> "Investigating".equals(t.getStatus())).count();
+        // Build a fast zone lookup
+        java.util.Map<Integer, String> zoneMap = new java.util.HashMap<>();
+        for (Zone z : zones) zoneMap.put(z.getZoneId(), z.getZoneName());
 
-        try (PDDocument doc = new PDDocument()) {
+        long critical = 0, warning = 0, info = 0, active = 0;
+        for (Threat t : threats) {
+            String zoneName = zoneMap.getOrDefault(t.getZoneId(), "Unknown");
+            lines.add("  [#" + t.getThreatId() + "] "
+                    + t.getThreatType()
+                    + "  |  Zone: " + zoneName
+                    + "  |  Severity: " + t.getSeverity()
+                    + "  |  Status: " + t.getStatus()
+                    + "  |  " + t.getThreatDate() + " " + t.getThreatTime());
+            if ("Critical".equals(t.getSeverity()))    critical++;
+            else if ("Warning".equals(t.getSeverity())) warning++;
+            else if ("Info".equals(t.getSeverity()))    info++;
+            if ("Active".equals(t.getStatus()))         active++;
+        }
+        lines.add(" ");
+        lines.add("=== SUMMARY ===");
+        lines.add("  Total threats : " + threats.size());
+        lines.add("  Critical       : " + critical);
+        lines.add("  Warning        : " + warning);
+        lines.add("  Info           : " + info);
+        lines.add("  Active now     : " + active);
 
-            PDFont fontRegular = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
-            PDFont fontBold    = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
+        writePdf(file, lines);
+    }
 
-            // ── Page 1 : Cover + Summary ────────────────────────────────────
-            PDPage page1 = new PDPage(PDRectangle.A4);
-            doc.addPage(page1);
+    // ── Minimal PDF 1.4 writer (no external libraries) ────────────────────
+    private void writePdf(File file, List<String> lines) throws Exception {
+        // We'll collect each PDF object as a byte array and track offsets for xref
+        java.util.List<byte[]> objects = new java.util.ArrayList<>();
+        java.util.List<Integer> offsets = new java.util.ArrayList<>();
 
-            try (PDPageContentStream cs = new PDPageContentStream(doc, page1)) {
+        // Helper to build a PDF text stream from lines
+        // Uses Helvetica (standard font, always available in PDF readers)
+        StringBuilder stream = new StringBuilder();
+        stream.append("BT\n");
+        stream.append("/F1 11 Tf\n");   // font + size
+        stream.append("40 780 Td\n");   // starting position (x=40, y=780)
+        stream.append("14 TL\n");       // line height
 
-                // Dark header band
-                fillRect(cs, 0, PAGE_H - 130, PAGE_W, 130, C_DARK);
+        // Title line — larger
+        String title = lines.get(0);
+        stream.append("/F1 16 Tf\n");
+        stream.append("(").append(escapePdf(title)).append(") Tj\n");
+        stream.append("T*\n");
+        stream.append("/F1 10 Tf\n");
 
-                // Logo circle
-                drawCircle(cs, MARGIN + 18, PAGE_H - 65, 14, C_ACCENT);
+        int lineCount = 1;
+        int page = 1;
+        // We'll fit ~52 lines per page (A4 at 14pt leading, 780 start, 40 margin bottom)
+        int linesPerPage = 52;
 
-                // App title in header
-                cs.beginText();
-                cs.setFont(fontBold, 20);
-                setFillColor(cs, C_WHITE);
-                cs.newLineAtOffset(MARGIN + 40, PAGE_H - 55);
-                cs.showText("SentinelCity");
-                cs.endText();
+        // For simplicity we write a single-page PDF (truncated at linesPerPage*pages)
+        // A proper multi-page PDF needs more complex object references — we keep it simple
+        for (int i = 1; i < lines.size(); i++) {
+            String line = lines.get(i);
+            if (line.startsWith("===")) {
+                // Section header — bold-ish (larger size)
+                stream.append("/F1 11 Tf\n");
+                stream.append("(").append(escapePdf(line)).append(") Tj\n");
+                stream.append("T*\n");
+                stream.append("/F1 10 Tf\n");
+            } else {
+                stream.append("(").append(escapePdf(line)).append(") Tj\n");
+                stream.append("T*\n");
+            }
+            lineCount++;
+            if (lineCount > linesPerPage * 3) break; // safety cap at 3 pages worth
+        }
+        stream.append("ET\n");
 
-                cs.beginText();
-                cs.setFont(fontRegular, 10);
-                setFillColor(cs, C_GRAY);
-                cs.newLineAtOffset(MARGIN + 40, PAGE_H - 72);
-                cs.showText("Urban Cyber Threat Monitor  ·  Surat Smart City");
-                cs.endText();
+        byte[] streamBytes = stream.toString().getBytes(StandardCharsets.ISO_8859_1);
 
-                // Report date (right side of header)
-                String now = LocalDateTime.now().format(
-                    DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm"));
-                cs.beginText();
-                cs.setFont(fontRegular, 9);
-                setFillColor(cs, C_GRAY);
-                cs.newLineAtOffset(PAGE_W - MARGIN - 120, PAGE_H - 60);
-                cs.showText("Generated: " + now);
-                cs.endText();
+        // Build PDF objects
+        // Object 1: Catalog
+        String obj1 = "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
+        // Object 2: Pages
+        String obj2 = "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n";
+        // Object 3: Page
+        String obj3 = "3 0 obj\n<< /Type /Page /Parent 2 0 R"
+                + " /MediaBox [0 0 595 842]"
+                + " /Contents 4 0 R"
+                + " /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n";
+        // Object 4: Content stream
+        String obj4Header = "4 0 obj\n<< /Length " + streamBytes.length + " >>\nstream\n";
+        String obj4Footer = "\nendstream\nendobj\n";
+        // Object 5: Font
+        String obj5 = "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica"
+                + " /Encoding /WinAnsiEncoding >>\nendobj\n";
 
-                // Report title
-                cs.beginText();
-                cs.setFont(fontBold, 26);
-                setFillColor(cs, C_BLACK);
-                cs.newLineAtOffset(MARGIN, PAGE_H - 175);
-                cs.showText("Threat Intelligence Report");
-                cs.endText();
+        // Write PDF to file
+        try (FileOutputStream fos = new FileOutputStream(file)) {
+            byte[] header = "%PDF-1.4\n".getBytes(StandardCharsets.ISO_8859_1);
+            fos.write(header);
+            int offset = header.length;
 
-                cs.beginText();
-                cs.setFont(fontRegular, 12);
-                setFillColor(cs, C_GRAY);
-                cs.newLineAtOffset(MARGIN, PAGE_H - 196);
-                cs.showText("Automated analysis of all logged threats");
-                cs.endText();
-
-                // Accent underline
-                fillRect(cs, MARGIN, PAGE_H - 205, COL_W, 2, C_ACCENT);
-
-                // ── Summary stat boxes ────────────────────────────────────
-                float boxY  = PAGE_H - 265;
-                float boxW  = 100f;
-                float boxH  = 64f;
-                float boxGap = 16f;
-                float startX = MARGIN;
-
-                Object[][] stats = {
-                    {"Total",       String.valueOf(threats.size()), C_DARK},
-                    {"Critical",    String.valueOf(critical),        C_RED},
-                    {"Warning",     String.valueOf(warning),         C_AMBER},
-                    {"Info",        String.valueOf(info),            C_BLUE},
-                };
-
-                for (Object[] stat : stats) {
-                    float[] color = (float[]) stat[2];
-                    fillRect(cs, startX, boxY - boxH + 10, boxW, boxH, color);
-
-                    cs.beginText();
-                    cs.setFont(fontBold, 24);
-                    setFillColor(cs, C_WHITE);
-                    cs.newLineAtOffset(startX + 12, boxY - 20);
-                    cs.showText((String) stat[1]);
-                    cs.endText();
-
-                    cs.beginText();
-                    cs.setFont(fontRegular, 9);
-                    setFillColor(cs, C_WHITE);
-                    cs.newLineAtOffset(startX + 12, boxY - 38);
-                    cs.showText((String) stat[0]);
-                    cs.endText();
-
-                    startX += boxW + boxGap;
-                }
-
-                // ── Status breakdown ──────────────────────────────────────
-                float statusY = boxY - boxH - 30;
-
-                cs.beginText();
-                cs.setFont(fontBold, 12);
-                setFillColor(cs, C_BLACK);
-                cs.newLineAtOffset(MARGIN, statusY);
-                cs.showText("Status Breakdown");
-                cs.endText();
-
-                statusY -= LINE_H + 4;
-                fillRect(cs, MARGIN, statusY - 2, COL_W, 1, C_GRAY);
-                statusY -= 10;
-
-                Object[][] statuses = {
-                    {"Active",         String.valueOf(active),    C_RED},
-                    {"Investigating",  String.valueOf(investing),  C_AMBER},
-                    {"Resolved",       String.valueOf(resolved),   C_GREEN},
-                };
-                for (Object[] s : statuses) {
-                    float[] c = (float[]) s[2];
-                    drawCircle(cs, MARGIN + 6, statusY + 3, 5, c);
-                    cs.beginText();
-                    cs.setFont(fontRegular, 11);
-                    setFillColor(cs, C_BLACK);
-                    cs.newLineAtOffset(MARGIN + 18, statusY);
-                    cs.showText((String) s[0] + ":  " + (String) s[1]);
-                    cs.endText();
-                    statusY -= ROW_H;
-                }
-
-                // ── Threat table header ───────────────────────────────────
-                float tableY = statusY - 30;
-
-                cs.beginText();
-                cs.setFont(fontBold, 12);
-                setFillColor(cs, C_BLACK);
-                cs.newLineAtOffset(MARGIN, tableY);
-                cs.showText("All Threats");
-                cs.endText();
-
-                tableY -= LINE_H + 4;
-
-                // Column widths: ID, Zone, Type, Severity, Date, Status
-                float[] colWidths = {35, 90, 130, 65, 75, 90};
-                String[] colHeaders = {"ID", "Zone", "Threat Type", "Severity", "Date", "Status"};
-
-                // Header row
-                fillRect(cs, MARGIN, tableY - ROW_H + 4, COL_W, ROW_H, C_DARK);
-                float cx = MARGIN + 6;
-                for (int i = 0; i < colHeaders.length; i++) {
-                    cs.beginText();
-                    cs.setFont(fontBold, 8);
-                    setFillColor(cs, C_WHITE);
-                    cs.newLineAtOffset(cx, tableY - 9);
-                    cs.showText(colHeaders[i]);
-                    cs.endText();
-                    cx += colWidths[i];
-                }
-                tableY -= ROW_H;
-
-                // Data rows (up to 25 on page 1)
-                int maxOnPage1 = 25;
-                int row = 0;
-                for (Threat t : threats) {
-                    if (row >= maxOnPage1) break;
-                    if (tableY < MARGIN + 20) break;
-
-                    float[] rowBg = (row % 2 == 0) ? C_WHITE : C_LIGHT;
-                    fillRect(cs, MARGIN, tableY - ROW_H + 4, COL_W, ROW_H, rowBg);
-
-                    // Severity colour dot
-                    float[] sevColor = severityColor(t.getSeverity());
-
-                    String[] cells = {
-                        String.valueOf(t.getThreatId()),
-                        truncate(zoneNames.getOrDefault(t.getZoneId(), "?"), 14),
-                        truncate(t.getThreatType().replace(" [AUTO-ESCALATED]", "*"), 20),
-                        t.getSeverity(),
-                        t.getThreatDate(),
-                        t.getStatus()
-                    };
-
-                    cx = MARGIN + 6;
-                    for (int i = 0; i < cells.length; i++) {
-                        cs.beginText();
-                        cs.setFont(i == 3 ? fontBold : fontRegular, 8);
-                        setFillColor(cs, i == 3 ? sevColor : C_BLACK);
-                        cs.newLineAtOffset(cx, tableY - 9);
-                        cs.showText(cells[i]);
-                        cs.endText();
-                        cx += colWidths[i];
-                    }
-                    tableY -= ROW_H;
-                    row++;
-                }
-
-                // Footer
-                cs.beginText();
-                cs.setFont(fontRegular, 8);
-                setFillColor(cs, C_GRAY);
-                cs.newLineAtOffset(MARGIN, 28);
-                cs.showText("SentinelCity · Confidential · Page 1   * = Auto-escalated threat");
-                cs.endText();
-
-                fillRect(cs, MARGIN, 40, COL_W, 1, C_GRAY);
+            // Write each object and record its offset
+            String[] textObjs = {obj1, obj2, obj3};
+            for (String obj : textObjs) {
+                offsets.add(offset);
+                byte[] b = obj.getBytes(StandardCharsets.ISO_8859_1);
+                fos.write(b);
+                offset += b.length;
             }
 
-            // ── Page 2+ : Overflow rows ─────────────────────────────────────
-            if (threats.size() > maxOnPage1Ref()) {
-                List<Threat> overflow = threats.subList(
-                    Math.min(maxOnPage1Ref(), threats.size()), threats.size());
-                addOverflowPage(doc, overflow, zoneNames, fontRegular, fontBold);
-            }
+            // Object 4 (stream)
+            offsets.add(offset);
+            byte[] h4 = obj4Header.getBytes(StandardCharsets.ISO_8859_1);
+            fos.write(h4);
+            offset += h4.length;
+            fos.write(streamBytes);
+            offset += streamBytes.length;
+            byte[] f4 = obj4Footer.getBytes(StandardCharsets.ISO_8859_1);
+            fos.write(f4);
+            offset += f4.length;
 
-            doc.save(outputFile);
+            // Object 5 (font)
+            offsets.add(offset);
+            byte[] b5 = obj5.getBytes(StandardCharsets.ISO_8859_1);
+            fos.write(b5);
+            offset += b5.length;
+
+            // xref table
+            int xrefOffset = offset;
+            StringBuilder xref = new StringBuilder();
+            xref.append("xref\n");
+            xref.append("0 6\n");
+            xref.append("0000000000 65535 f \n"); // object 0 (free)
+            for (int off : offsets) {
+                xref.append(String.format("%010d 00000 n \n", off));
+            }
+            xref.append("trailer\n<< /Size 6 /Root 1 0 R >>\n");
+            xref.append("startxref\n").append(xrefOffset).append("\n%%EOF\n");
+
+            fos.write(xref.toString().getBytes(StandardCharsets.ISO_8859_1));
         }
     }
 
-    private int maxOnPage1Ref() { return 25; }
-
-    private void addOverflowPage(PDDocument doc, List<Threat> threats,
-                                  Map<Integer, String> zoneNames,
-                                  PDFont fontRegular, PDFont fontBold) throws IOException {
-        PDPage page = new PDPage(PDRectangle.A4);
-        doc.addPage(page);
-
-        try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
-            fillRect(cs, 0, PAGE_H - 50, PAGE_W, 50, C_DARK);
-            cs.beginText();
-            cs.setFont(fontBold, 13);
-            setFillColor(cs, C_WHITE);
-            cs.newLineAtOffset(MARGIN, PAGE_H - 30);
-            cs.showText("SentinelCity — Threat Report (continued)");
-            cs.endText();
-
-            float[] colWidths = {35, 90, 130, 65, 75, 90};
-            String[] colHeaders = {"ID", "Zone", "Threat Type", "Severity", "Date", "Status"};
-            float tableY = PAGE_H - 75;
-
-            fillRect(cs, MARGIN, tableY - ROW_H + 4, COL_W, ROW_H, C_DARK);
-            float cx = MARGIN + 6;
-            for (int i = 0; i < colHeaders.length; i++) {
-                cs.beginText();
-                cs.setFont(fontBold, 8);
-                setFillColor(cs, C_WHITE);
-                cs.newLineAtOffset(cx, tableY - 9);
-                cs.showText(colHeaders[i]);
-                cs.endText();
-                cx += colWidths[i];
-            }
-            tableY -= ROW_H;
-
-            int row = 0;
-            for (Threat t : threats) {
-                if (tableY < MARGIN + 20) break;
-                float[] rowBg = (row % 2 == 0) ? C_WHITE : C_LIGHT;
-                fillRect(cs, MARGIN, tableY - ROW_H + 4, COL_W, ROW_H, rowBg);
-
-                String[] cells = {
-                    String.valueOf(t.getThreatId()),
-                    truncate(zoneNames.getOrDefault(t.getZoneId(), "?"), 14),
-                    truncate(t.getThreatType().replace(" [AUTO-ESCALATED]", "*"), 20),
-                    t.getSeverity(),
-                    t.getThreatDate(),
-                    t.getStatus()
-                };
-
-                cx = MARGIN + 6;
-                for (int i = 0; i < cells.length; i++) {
-                    cs.beginText();
-                    cs.setFont(i == 3 ? fontBold : fontRegular, 8);
-                    setFillColor(cs, i == 3 ? severityColor(t.getSeverity()) : C_BLACK);
-                    cs.newLineAtOffset(cx, tableY - 9);
-                    cs.showText(cells[i]);
-                    cs.endText();
-                    cx += colWidths[i];
-                }
-                tableY -= ROW_H;
-                row++;
-            }
-
-            cs.beginText();
-            cs.setFont(fontRegular, 8);
-            setFillColor(cs, C_GRAY);
-            cs.newLineAtOffset(MARGIN, 28);
-            cs.showText("SentinelCity · Confidential · Page 2");
-            cs.endText();
-            fillRect(cs, MARGIN, 40, COL_W, 1, C_GRAY);
-        }
-    }
-
-    // ── Drawing helpers ───────────────────────────────────────────────────
-    private void fillRect(PDPageContentStream cs, float x, float y,
-                           float w, float h, float[] rgb) throws IOException {
-        cs.setNonStrokingColor(new PDColor(rgb, PDDeviceRGB.INSTANCE));
-        cs.addRect(x, y, w, h);
-        cs.fill();
-    }
-
-    private void drawCircle(PDPageContentStream cs, float cx, float cy,
-                              float r, float[] rgb) throws IOException {
-        cs.setNonStrokingColor(new PDColor(rgb, PDDeviceRGB.INSTANCE));
-        final float k = 0.5523f * r;
-        cs.moveTo(cx, cy + r);
-        cs.curveTo(cx + k, cy + r, cx + r, cy + k, cx + r, cy);
-        cs.curveTo(cx + r, cy - k, cx + k, cy - r, cx, cy - r);
-        cs.curveTo(cx - k, cy - r, cx - r, cy - k, cx - r, cy);
-        cs.curveTo(cx - r, cy + k, cx - k, cy + r, cx, cy + r);
-        cs.fill();
-    }
-
-    private void setFillColor(PDPageContentStream cs, float[] rgb) throws IOException {
-        cs.setNonStrokingColor(new PDColor(rgb, PDDeviceRGB.INSTANCE));
-    }
-
-    private float[] severityColor(String sev) {
-        return switch (sev) {
-            case "Critical" -> C_RED;
-            case "Warning"  -> C_AMBER;
-            case "Info"     -> C_BLUE;
-            default         -> C_GRAY;
-        };
-    }
-
-    private String truncate(String s, int maxLen) {
+    /** Escape special PDF string characters */
+    private String escapePdf(String s) {
         if (s == null) return "";
-        return s.length() > maxLen ? s.substring(0, maxLen - 1) + "…" : s;
+        // Strip non-latin characters (PDF Type1 fonts only support ISO-8859-1)
+        StringBuilder sb = new StringBuilder();
+        for (char c : s.toCharArray()) {
+            if (c == '(' || c == ')') sb.append('\\').append(c);
+            else if (c == '\\')       sb.append("\\\\");
+            else if (c >= 32 && c <= 126) sb.append(c);
+            else if (c == '\t')       sb.append("  ");
+            else sb.append(' ');
+        }
+        return sb.toString();
     }
-
-    // Keep local variable consistent
-    private static final int maxOnPage1 = 25;
 }

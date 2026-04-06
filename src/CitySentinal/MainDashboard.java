@@ -1,6 +1,5 @@
 package CitySentinal;
 
-import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
@@ -25,25 +24,27 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.*;
 
-public class MainDashboard extends Application {
+public class MainDashboard {
 
-    private ThreatDAO threatDAO;
-    private ZoneDAO zoneDAO;
+    // ── DAOs & feature components ─────────────────────────────────────────
+    private ThreatDAO  threatDAO;
+    private ZoneDAO    zoneDAO;
+    private SuratGeoMap geoMap;
 
+    // ── UI references ─────────────────────────────────────────────────────
     private Label totalThreatsValue;
     private Label criticalCountValue;
     private Label alertLabel;
-    private HBox alertPill;
+    private HBox  alertPill;
     private Circle alertDot;
     private TableView<ThreatRow> threatTable;
     private ObservableList<ThreatRow> masterData;
     private TextField searchField;
     private ComboBox<String> severityFilter;
 
+    // ── Colour palette ────────────────────────────────────────────────────
     private static final String C_SIDEBAR    = "#0f1623";
     private static final String C_TOPBAR     = "#ffffff";
     private static final String C_BG         = "#f1f5f9";
@@ -58,10 +59,11 @@ public class MainDashboard extends Application {
     private static final String C_GREEN_BG   = "#f0fdf4";
     private static final String C_GREEN_TEXT = "#166534";
 
-    @Override
+    // ─────────────────────────────────────────────────────────────────────
     public void start(Stage primaryStage) {
         threatDAO = new ThreatDAO();
         zoneDAO   = new ZoneDAO();
+        geoMap    = new SuratGeoMap(threatDAO, zoneDAO);
 
         BorderPane root = new BorderPane();
         root.setStyle("-fx-background-color: " + C_BG + ";");
@@ -79,14 +81,13 @@ public class MainDashboard extends Application {
         primaryStage.setMinHeight(600);
         primaryStage.show();
 
-        // Load data after UI is fully shown
         Platform.runLater(() -> {
             refreshTable();
             startAlertMonitor();
         });
     }
 
-    // ── INLINE CSS ───────────────────────────────────────
+    // ── INLINE CSS ────────────────────────────────────────────────────────
     private String inlineStyle() {
         String css =
             ".table-view { -fx-background-color: white; -fx-border-color: #e2e8f0; -fx-border-radius: 10; }" +
@@ -115,7 +116,7 @@ public class MainDashboard extends Application {
         }
     }
 
-    // ── TOP BAR ──────────────────────────────────────────
+    // ── TOP BAR ──────────────────────────────────────────────────────────
     private HBox buildTopBar() {
         HBox bar = new HBox();
         bar.setAlignment(Pos.CENTER_LEFT);
@@ -157,14 +158,14 @@ public class MainDashboard extends Application {
         return bar;
     }
 
-    // ── SIDEBAR ──────────────────────────────────────────
+    // ── SIDEBAR ───────────────────────────────────────────────────────────
     private VBox buildSidebar(Stage stage) {
         VBox sidebar = new VBox(2);
         sidebar.setPrefWidth(190);
         sidebar.setPadding(new Insets(20, 0, 20, 0));
         sidebar.setStyle("-fx-background-color: " + C_SIDEBAR + ";");
 
-        Label city = new Label("  Surat Smart City");
+        Label city = new Label("  Ahmedabad Smart City");
         city.setFont(Font.font("System", 11));
         city.setTextFill(Color.web("#4b5563"));
         city.setPadding(new Insets(0, 0, 12, 16));
@@ -174,13 +175,14 @@ public class MainDashboard extends Application {
             {"Dashboard", "⊞"},
             {"Log Threat", "+"},
             {"View Zones", "◎"},
-            {"Reports", "≡"},
-            {"Exit", "→"}
+            {"Geo Map",    "⊕"},
+            {"Reports",    "≡"},
+            {"Exit",       "→"}
         };
 
         for (int i = 0; i < navItems.length; i++) {
-            String label = navItems[i][0];
-            String icon  = navItems[i][1];
+            String  label   = navItems[i][0];
+            String  icon    = navItems[i][1];
             boolean isFirst = (i == 0);
 
             HBox item = new HBox(10);
@@ -237,7 +239,7 @@ public class MainDashboard extends Application {
         return sidebar;
     }
 
-    // ── MAIN PANEL ───────────────────────────────────────
+    // ── MAIN PANEL ────────────────────────────────────────────────────────
     private VBox buildMainPanel() {
         VBox panel = new VBox(14);
         panel.setPadding(new Insets(20));
@@ -250,7 +252,7 @@ public class MainDashboard extends Application {
         return panel;
     }
 
-    // ── METRIC CARDS ─────────────────────────────────────
+    // ── METRIC CARDS ──────────────────────────────────────────────────────
     private HBox buildMetricsRow() {
         HBox row = new HBox(12);
         row.setFillHeight(true);
@@ -258,9 +260,9 @@ public class MainDashboard extends Application {
         totalThreatsValue  = new Label("0");
         criticalCountValue = new Label("0");
 
-        HBox c1 = metricCard("Total threats today",   totalThreatsValue,  "#fef2f2", "#fee2e2", "#991b1b", "⚠", "#ef4444");
-        HBox c2 = metricCard("Critical incidents",    criticalCountValue, "#fffbeb", "#fde68a", "#92400e", "◉", "#f59e0b");
-        HBox c3 = metricCard("City zones monitored",  new Label("6"),     "#eff6ff", "#bfdbfe", "#1e40af", "◎", "#3b82f6");
+        HBox c1 = metricCard("Total threats today",  totalThreatsValue,  "#fef2f2", "#fee2e2", "#991b1b", "⚠", "#ef4444");
+        HBox c2 = metricCard("Critical incidents",   criticalCountValue, "#fffbeb", "#fde68a", "#92400e", "◉", "#f59e0b");
+        HBox c3 = metricCard("City zones monitored", new Label("6"),     "#eff6ff", "#bfdbfe", "#1e40af", "◎", "#3b82f6");
 
         HBox.setHgrow(c1, Priority.ALWAYS);
         HBox.setHgrow(c2, Priority.ALWAYS);
@@ -304,7 +306,7 @@ public class MainDashboard extends Application {
         return card;
     }
 
-    // ── SEARCH BAR ───────────────────────────────────────
+    // ── SEARCH BAR ────────────────────────────────────────────────────────
     private HBox buildSearchBar() {
         HBox bar = new HBox(10);
         bar.setAlignment(Pos.CENTER_LEFT);
@@ -356,7 +358,7 @@ public class MainDashboard extends Application {
         return bar;
     }
 
-    // ── TABLE ─────────────────────────────────────────────
+    // ── TABLE ─────────────────────────────────────────────────────────────
     private VBox buildTableSection() {
         masterData  = FXCollections.observableArrayList();
         threatTable = new TableView<>(masterData);
@@ -364,7 +366,6 @@ public class MainDashboard extends Application {
         threatTable.setPlaceholder(new Label("No threats found."));
         VBox.setVgrow(threatTable, Priority.ALWAYS);
 
-        // All columns use String type — most reliable with PropertyValueFactory
         TableColumn<ThreatRow, String> idCol     = strCol("ID",          "threatId",   60);
         TableColumn<ThreatRow, String> zoneCol   = strCol("Zone",        "zoneName",   130);
         TableColumn<ThreatRow, String> typeCol   = strCol("Threat type", "threatType", 130);
@@ -399,7 +400,7 @@ public class MainDashboard extends Application {
         return col;
     }
 
-    // ── BADGE FACTORIES ──────────────────────────────────
+    // ── BADGE FACTORIES ───────────────────────────────────────────────────
     private Callback<TableColumn<ThreatRow, String>, TableCell<ThreatRow, String>> severityBadgeFactory() {
         return col -> new TableCell<>() {
             @Override protected void updateItem(String item, boolean empty) {
@@ -446,78 +447,70 @@ public class MainDashboard extends Application {
                "-fx-text-fill: " + text + ";";
     }
 
-    // ── REFRESH TABLE ────────────────────────────────────
+    // ── REFRESH TABLE ─────────────────────────────────────────────────────
     public void refreshTable() {
-        List<Threat> threats = threatDAO.getAllThreats();
-        List<Zone>   zones   = zoneDAO.getAllZones();
+        // DB work on background thread — only UI update on FX thread
+        new Thread(() -> {
+            List<Threat> threats = threatDAO.getAllThreats();
+            List<Zone>   zones   = zoneDAO.getAllZones();
 
-        System.out.println("DEBUG: threats loaded = " + threats.size());
+            Map<Integer, String> zoneMap = new HashMap<>();
+            for (Zone z : zones) zoneMap.put(z.getZoneId(), z.getZoneName());
 
-        int criticalCount = 0;
-        ObservableList<ThreatRow> rows = FXCollections.observableArrayList();
-
-        for (Threat t : threats) {
-            String zoneName = "Unknown";
-            for (Zone z : zones) {
-                if (z.getZoneId() == t.getZoneId()) {
-                    zoneName = z.getZoneName();
-                    break;
-                }
-            }
-            rows.add(new ThreatRow(
-                t.getThreatId(),
-                zoneName,
-                t.getThreatType(),
-                t.getSeverity(),
-                t.getThreatDate(),
-                t.getThreatTime(),
-                t.getStatus()
-            ));
-            if ("Critical".equals(t.getSeverity())) criticalCount++;
-        }
-
-        final int finalCritical = criticalCount;
-        Platform.runLater(() -> {
-            masterData.setAll(rows);
-            totalThreatsValue.setText(String.valueOf(threats.size()));
-            criticalCountValue.setText(String.valueOf(finalCritical));
-        });
-    }
-
-    // ── FILTER TABLE ─────────────────────────────────────
-    private void filterTable() {
-        String kw  = searchField.getText().toLowerCase().trim();
-        String sev = severityFilter.getValue();
-
-        List<Threat> threats = threatDAO.getAllThreats();
-        List<Zone>   zones   = zoneDAO.getAllZones();
-        ObservableList<ThreatRow> rows = FXCollections.observableArrayList();
-
-        for (Threat t : threats) {
-            String zoneName = "Unknown";
-            for (Zone z : zones) {
-                if (z.getZoneId() == t.getZoneId()) {
-                    zoneName = z.getZoneName();
-                    break;
-                }
-            }
-            boolean kMatch = kw.isEmpty()
-                || zoneName.toLowerCase().contains(kw)
-                || t.getThreatType().toLowerCase().contains(kw)
-                || t.getStatus().toLowerCase().contains(kw);
-            boolean sMatch = "All".equals(sev) || t.getSeverity().equals(sev);
-
-            if (kMatch && sMatch) {
+            int criticalCount = 0;
+            ObservableList<ThreatRow> rows = FXCollections.observableArrayList();
+            for (Threat t : threats) {
+                String zoneName = zoneMap.getOrDefault(t.getZoneId(), "Unknown");
                 rows.add(new ThreatRow(
                     t.getThreatId(), zoneName, t.getThreatType(),
                     t.getSeverity(), t.getThreatDate(), t.getThreatTime(), t.getStatus()
                 ));
+                if ("Critical".equals(t.getSeverity())) criticalCount++;
             }
-        }
-        masterData.setAll(rows);
+
+            final int finalCritical = criticalCount;
+            final int total         = threats.size();
+            Platform.runLater(() -> {
+                masterData.setAll(rows);
+                totalThreatsValue.setText(String.valueOf(total));
+                criticalCountValue.setText(String.valueOf(finalCritical));
+            });
+        }, "RefreshTable").start();
     }
 
-    // ── ALERT MONITOR ────────────────────────────────────
+    // ── FILTER TABLE ──────────────────────────────────────────────────────
+    private void filterTable() {
+        // Snapshot UI values on FX thread before going to background
+        String kw  = searchField.getText().toLowerCase().trim();
+        String sev = severityFilter.getValue();
+
+        new Thread(() -> {
+            List<Threat> threats = threatDAO.getAllThreats();
+            List<Zone>   zones   = zoneDAO.getAllZones();
+
+            Map<Integer, String> zoneMap = new HashMap<>();
+            for (Zone z : zones) zoneMap.put(z.getZoneId(), z.getZoneName());
+
+            ObservableList<ThreatRow> rows = FXCollections.observableArrayList();
+            for (Threat t : threats) {
+                String zoneName = zoneMap.getOrDefault(t.getZoneId(), "Unknown");
+                boolean kMatch = kw.isEmpty()
+                    || zoneName.toLowerCase().contains(kw)
+                    || t.getThreatType().toLowerCase().contains(kw)
+                    || t.getStatus().toLowerCase().contains(kw);
+                boolean sMatch = "All".equals(sev) || t.getSeverity().equals(sev);
+                if (kMatch && sMatch) {
+                    rows.add(new ThreatRow(
+                        t.getThreatId(), zoneName, t.getThreatType(),
+                        t.getSeverity(), t.getThreatDate(), t.getThreatTime(), t.getStatus()
+                    ));
+                }
+            }
+            Platform.runLater(() -> masterData.setAll(rows));
+        }, "FilterTable").start();
+    }
+
+    // ── ALERT MONITOR ─────────────────────────────────────────────────────
     private void startAlertMonitor() {
         Timer timer = new Timer(true);
         timer.scheduleAtFixedRate(new TimerTask() {
@@ -547,18 +540,19 @@ public class MainDashboard extends Application {
         }, 0, 10_000);
     }
 
-    // ── NAV HANDLER ──────────────────────────────────────
+    // ── NAV HANDLER ───────────────────────────────────────────────────────
     private void handleNav(String item, Stage stage) {
         switch (item) {
-            case "Dashboard":  refreshTable();                break;
-            case "Log Threat": showLogThreatDialog(stage);   break;
-            case "View Zones": showZonesDialog(stage);        break;
-            case "Reports":    exportReport(stage);           break;
-            case "Exit":       Platform.exit();               break;
+            case "Dashboard":  refreshTable();                 break;
+            case "Log Threat": showLogThreatDialog(stage);    break;
+            case "View Zones": showZonesDialog(stage);         break;
+            case "Geo Map":    showGeoMapDialog(stage);        break;
+            case "Reports":    exportReport(stage);            break;
+            case "Exit":       Platform.exit();                break;
         }
     }
 
-    // ── LOG THREAT DIALOG ────────────────────────────────
+    // ── LOG THREAT DIALOG ─────────────────────────────────────────────────
     private void showLogThreatDialog(Stage owner) {
         Stage dialog = new Stage();
         dialog.initOwner(owner);
@@ -575,15 +569,19 @@ public class MainDashboard extends Application {
         title.setFont(Font.font("System", FontWeight.BOLD, 16));
         title.setTextFill(Color.web("#1e293b"));
 
-        List<Zone> zones = zoneDAO.getAllZones();
+        // Load zones on background to avoid UI freeze
+        List<Zone> zones = zoneDAO.getAllZones(); // small list, fast enough
         String[] zoneNames = zones.stream()
             .map(z -> z.getZoneId() + " - " + z.getZoneName())
             .toArray(String[]::new);
 
         ComboBox<String> zoneBox   = dialogCombo(zoneNames);
-        ComboBox<String> typeBox   = dialogCombo("DDoS Attack","Ransomware","Phishing","Port Scan","Unauthorized Login","Malware","SQL Injection","Man-in-Middle","Zero-Day Exploit","Data Breach");
-        ComboBox<String> sevBox    = dialogCombo("Critical","Warning","Info");
-        ComboBox<String> statusBox = dialogCombo("Active","Resolved","Investigating");
+        ComboBox<String> typeBox   = dialogCombo("DDoS Attack", "Ransomware", "Phishing",
+                                                  "Port Scan", "Unauthorized Login", "Malware",
+                                                  "SQL Injection", "Man-in-Middle",
+                                                  "Zero-Day Exploit", "Data Breach");
+        ComboBox<String> sevBox    = dialogCombo("Critical", "Warning", "Info");
+        ComboBox<String> statusBox = dialogCombo("Active", "Resolved", "Investigating");
 
         root.getChildren().addAll(
             title,
@@ -597,21 +595,31 @@ public class MainDashboard extends Application {
         save.setMaxWidth(Double.MAX_VALUE);
         save.setPrefHeight(38);
         save.setOnAction(e -> {
-            try {
-                int idx    = zoneBox.getSelectionModel().getSelectedIndex();
-                int zoneId = (idx >= 0 && idx < zones.size()) ? zones.get(idx).getZoneId() : 1;
-                Threat t = new Threat(0, zoneId,
-                    typeBox.getValue(), sevBox.getValue(),
-                    LocalDate.now().toString(),
-                    LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")),
-                    statusBox.getValue());
-                threatDAO.addThreat(t);
-                refreshTable();
-                dialog.close();
-                showInfo(owner, "Success", "Threat logged successfully!");
-            } catch (Exception ex) {
-                showInfo(owner, "Error", "Could not save: " + ex.getMessage());
-            }
+            int idx    = zoneBox.getSelectionModel().getSelectedIndex();
+            int zoneId = (idx >= 0 && idx < zones.size()) ? zones.get(idx).getZoneId() : 1;
+            Threat threat = new Threat(0, zoneId,
+                typeBox.getValue(), sevBox.getValue(),
+                LocalDate.now().toString(),
+                LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")),
+                statusBox.getValue());
+            save.setDisable(true);
+            save.setText("Saving...");
+            new Thread(() -> {
+                try {
+                    threatDAO.addThreat(threat);
+                    Platform.runLater(() -> {
+                        dialog.close();
+                        refreshTable();
+                        showInfo(owner, "Success", "Threat logged successfully!");
+                    });
+                } catch (Exception ex) {
+                    Platform.runLater(() -> {
+                        save.setDisable(false);
+                        save.setText("Save threat");
+                        showInfo(owner, "Error", "Could not save: " + ex.getMessage());
+                    });
+                }
+            }, "SaveThreat").start();
         });
         root.getChildren().add(save);
 
@@ -619,7 +627,7 @@ public class MainDashboard extends Application {
         dialog.showAndWait();
     }
 
-    // ── VIEW ZONES DIALOG ────────────────────────────────
+    // ── VIEW ZONES DIALOG ─────────────────────────────────────────────────
     private void showZonesDialog(Stage owner) {
         Stage dialog = new Stage();
         dialog.initOwner(owner);
@@ -639,7 +647,11 @@ public class MainDashboard extends Application {
         levelCol.setCellValueFactory(new PropertyValueFactory<>("threatLevel"));
 
         table.getColumns().addAll(idCol, nameCol, levelCol);
-        table.getItems().addAll(zoneDAO.getAllZones());
+        table.setPlaceholder(new Label("Loading zones..."));
+        new Thread(() -> {
+            List<Zone> allZones = zoneDAO.getAllZones();
+            Platform.runLater(() -> table.getItems().addAll(allZones));
+        }, "LoadZones").start();
 
         VBox root = new VBox(table);
         root.setPadding(new Insets(16));
@@ -650,30 +662,62 @@ public class MainDashboard extends Application {
         dialog.showAndWait();
     }
 
-    // ── EXPORT REPORT ────────────────────────────────────
+    // ── GEO MAP DIALOG ────────────────────────────────────────────────────
+    private void showGeoMapDialog(Stage owner) {
+        Stage dialog = new Stage();
+        dialog.initOwner(owner);
+        // NONE modality — WebView needs FX thread free to load tiles
+        dialog.initModality(Modality.NONE);
+        dialog.setTitle("Ahmedabad Zone Map");
+        dialog.setWidth(860);
+        dialog.setHeight(580);
+        dialog.setMinWidth(700);
+        dialog.setMinHeight(500);
+
+        // Always create a fresh SuratGeoMap so getView() builds a new WebEngine
+        SuratGeoMap freshMap = new SuratGeoMap(threatDAO, zoneDAO);
+        VBox root = freshMap.getView();
+
+        dialog.setScene(new Scene(root));
+        dialog.show(); // show() not showAndWait() — lets WebView load async
+    }
+
+    // ── EXPORT REPORT (PDF) ───────────────────────────────────────────────
     private void exportReport(Stage owner) {
         FileChooser fc = new FileChooser();
-        fc.setTitle("Save report");
-        fc.setInitialFileName("SentinelCity_Report.csv");
-        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV files", "*.csv"));
+        fc.setTitle("Save PDF Report");
+        fc.setInitialFileName("SentinelCity_Report.pdf");
+        fc.getExtensionFilters().add(
+            new FileChooser.ExtensionFilter("PDF files", "*.pdf"));
         java.io.File file = fc.showSaveDialog(owner);
         if (file == null) return;
 
-        try (FileWriter fw = new FileWriter(file)) {
-            fw.write("ID,Zone ID,Threat Type,Severity,Date,Time,Status\n");
-            for (Threat t : threatDAO.getAllThreats()) {
-                fw.write(t.getThreatId() + "," + t.getZoneId() + "," +
-                         t.getThreatType() + "," + t.getSeverity() + "," +
-                         t.getThreatDate() + "," + t.getThreatTime() + "," +
-                         t.getStatus() + "\n");
+        new Thread(() -> {
+            try {
+                new PDFReportExporter(threatDAO, zoneDAO).export(file);
+                Platform.runLater(() -> {
+                    // Auto-open the file with the system default PDF viewer
+                    try {
+                        if (java.awt.Desktop.isDesktopSupported()) {
+                            java.awt.Desktop.getDesktop().open(file);
+                        } else {
+                            showInfo(owner, "Report Exported",
+                                "PDF saved to:\n" + file.getAbsolutePath());
+                        }
+                    } catch (Exception openEx) {
+                        showInfo(owner, "Report Exported",
+                            "PDF saved to:\n" + file.getAbsolutePath() +
+                            "\n\nCould not open automatically: " + openEx.getMessage());
+                    }
+                });
+            } catch (Exception ex) {
+                Platform.runLater(() ->
+                    showInfo(owner, "Error", "PDF export failed:\n" + ex.getMessage()));
             }
-            showInfo(owner, "Exported", "Report saved to:\n" + file.getAbsolutePath());
-        } catch (IOException ex) {
-            showInfo(owner, "Error", ex.getMessage());
-        }
+        }).start();
     }
 
-    // ── HELPERS ──────────────────────────────────────────
+    // ── HELPERS ───────────────────────────────────────────────────────────
     private Button styledButton(String text, String bg, String fg) {
         Button b = new Button(text);
         b.setFont(Font.font("System", FontWeight.BOLD, 12));
@@ -716,7 +760,7 @@ public class MainDashboard extends Application {
         alert.showAndWait();
     }
 
-    // ── THREAT ROW — all SimpleStringProperty, no IntegerProperty ────────
+    // ── THREAT ROW ────────────────────────────────────────────────────────
     public static class ThreatRow {
         private final SimpleStringProperty threatId;
         private final SimpleStringProperty zoneName;
@@ -737,7 +781,6 @@ public class MainDashboard extends Application {
             this.status     = new SimpleStringProperty(status);
         }
 
-        // Getters — must match PropertyValueFactory names exactly
         public String getThreatId()   { return threatId.get(); }
         public String getZoneName()   { return zoneName.get(); }
         public String getThreatType() { return threatType.get(); }
@@ -746,7 +789,6 @@ public class MainDashboard extends Application {
         public String getThreatTime() { return threatTime.get(); }
         public String getStatus()     { return status.get(); }
 
-        // Property methods — required for PropertyValueFactory to work
         public SimpleStringProperty threatIdProperty()   { return threatId; }
         public SimpleStringProperty zoneNameProperty()   { return zoneName; }
         public SimpleStringProperty threatTypeProperty() { return threatType; }
@@ -756,7 +798,4 @@ public class MainDashboard extends Application {
         public SimpleStringProperty statusProperty()     { return status; }
     }
 
-    public static void main(String[] args) {
-        launch(args);
-    }
 }
