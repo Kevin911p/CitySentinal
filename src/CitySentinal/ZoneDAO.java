@@ -6,7 +6,6 @@ import java.util.List;
 
 public class ZoneDAO {
 
-    // Add a new zone to the database
     public void addZone(Zone zone) {
         String sql = "INSERT INTO zones (zone_name, threat_level) VALUES (?, ?)";
         try (Connection conn = DBConnection.getConnection();
@@ -19,7 +18,6 @@ public class ZoneDAO {
         }
     }
 
-    // Get all zones from the database
     public List<Zone> getAllZones() {
         List<Zone> zones = new ArrayList<>();
         String sql = "SELECT * FROM zones";
@@ -39,7 +37,6 @@ public class ZoneDAO {
         return zones;
     }
 
-    // Delete a zone by ID
     public void deleteZone(int zoneId) {
         String sql = "DELETE FROM zones WHERE zone_id = ?";
         try (Connection conn = DBConnection.getConnection();

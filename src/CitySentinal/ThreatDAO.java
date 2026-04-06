@@ -6,7 +6,6 @@ import java.util.List;
 
 public class ThreatDAO {
 
-    // Add a new threat to the database
     public void addThreat(Threat threat) {
         String sql = "INSERT INTO threats (zone_id, threat_type, severity, threat_date, threat_time, status) VALUES (?, ?, ?, ?, ?, ?)";
         try (Connection conn = DBConnection.getConnection();
@@ -23,7 +22,6 @@ public class ThreatDAO {
         }
     }
 
-    // Get all threats from the database
     public List<Threat> getAllThreats() {
         List<Threat> threats = new ArrayList<>();
         String sql = "SELECT * FROM threats ORDER BY threat_date DESC, threat_time DESC";
@@ -47,7 +45,6 @@ public class ThreatDAO {
         return threats;
     }
 
-    // Get only critical threats
     public List<Threat> getCriticalThreats() {
         List<Threat> threats = new ArrayList<>();
         String sql = "SELECT * FROM threats WHERE severity = 'Critical'";
@@ -71,7 +68,6 @@ public class ThreatDAO {
         return threats;
     }
 
-    // Get total threat count
     public int getTotalThreatCount() {
         String sql = "SELECT COUNT(*) FROM threats";
         try (Connection conn = DBConnection.getConnection();

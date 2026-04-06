@@ -33,3 +33,4 @@ public class Main {
             System.out.println("Failed to connect to database. Please check XAMPP is running.");
         }
     }
+}
