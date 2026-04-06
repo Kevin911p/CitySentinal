@@ -148,6 +148,7 @@ public class SuratGeoMap {
         startPoller();
 
         return wrapper;
+    
     }
 
     public void refresh() {
